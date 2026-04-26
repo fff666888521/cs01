@@ -28,7 +28,7 @@ jobs:
         id: quality
         env:
           API_URL: http://localhost:8009
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -c "
   import requests, os, json
@@ -45,13 +45,13 @@ if token:
   
   resp = requests.post(f'{api}/git-scan', json=payload, headers=headers, timeout=300)
   result = resp.json()
-print(f'Score: {result.get("overall_score", "N/A")}/100')
-print(f'Issues: {result.get("total_issues", 0)}')
-print(f'Decision: {result.get("overall_decision", {}).get("status", "N/A")}')
+print(f'Score: {result.get(\"overall_score\", \"N/A\")}/100')
+print(f'Issues: {result.get(\"total_issues\", 0)}')
+print(f'Decision: {result.get(\"overall_decision\", {}).get(\"status\", \"N/A\")}')
 
 # Save result for PR comment
 with open('quality_result.json', 'w') as f:
-                                                                                                                                       json.dump(result, f)
+                                                                                                                                               json.dump(result, f)
   "
 
       - name: Post PR Comment
