@@ -1,0 +1,88 @@
+name: AI Code Quality Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: AI Code Quality Scan
+        id: quality
+        env:
+          API_URL: http://localhost:8009
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -c "
+  import requests, os, json
+  
+  api = os.environ['API_URL']
+  token = os.environ.get('GITHUB_TOKEN', '')
+  repo = 'https://github.com/fff666888521/cs01.git'
+  branch = 'main'
+
+payload = {'repo_url': repo, 'branch': branch}
+headers = {'Content-Type': 'application/json'}
+if token:
+  headers['Authorization'] = f'Bearer {token}'
+  
+  resp = requests.post(f'{api}/git-scan', json=payload, headers=headers, timeout=300)
+  result = resp.json()
+print(f'Score: {result.get("overall_score", "N/A")}/100')
+print(f'Issues: {result.get("total_issues", 0)}')
+print(f'Decision: {result.get("overall_decision", {}).get("status", "N/A")}')
+
+# Save result for PR comment
+with open('quality_result.json', 'w') as f:
+                                                                                                                                       json.dump(result, f)
+  "
+
+      - name: Post PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(fs.readFileSync('quality_result.json', 'utf8'));
+            const score = result.overall_score || 0;
+            const issues = result.total_issues || 0;
+            const high = result.high_issues || 0;
+            const decision = result.overall_decision?.label || '--';
+            const body = `## AI Code Quality Report\n\n| Metric | Value |\n|--------|-------|\n| Score | ${score}/100 |\n| Issues | ${issues} (HIGH ${high}) |\n| Decision | ${decision} |\n\n${result.summary || ''}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Check Quality Gate
+        if: always()
+        run: |
+          python -c "
+  import json
+with open('quality_result.json') as f:
+  r = json.load(f)
+  gate = r.get('overall_decision', {}).get('status', 'PASS')
+  score = r.get('overall_score', 100)
+print(f'Quality Gate: {gate}, Score: {score}/100')
+if gate == 'BLOCK':
+  exit(1)
+  "
