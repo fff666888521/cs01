@@ -27,45 +27,89 @@ jobs:
       - name: AI Code Quality Scan
         id: quality
         env:
-          API_URL: http://localhost:8009
+          API_URL: http://192.168.1.240:8009
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -c "
-  import requests, os, json
-  
-  api = os.environ['API_URL']
-  token = os.environ.get('GITHUB_TOKEN', '')
-  repo = 'https://github.com/fff666888521/cs01.git'
-  branch = 'main'
+          python - <<'PYEOF'
+          import requests, os, json, time, sys
 
-payload = {'repo_url': repo, 'branch': branch}
-headers = {'Content-Type': 'application/json'}
-if token:
-  headers['Authorization'] = f'Bearer {token}'
-  
-  resp = requests.post(f'{api}/git-scan', json=payload, headers=headers, timeout=300)
-  result = resp.json()
-print(f'Score: {result.get(\"overall_score\", \"N/A\")}/100')
-print(f'Issues: {result.get(\"total_issues\", 0)}')
-print(f'Decision: {result.get(\"overall_decision\", {}).get(\"status\", \"N/A\")}')
+          api = os.environ["API_URL"]
+          token = os.environ.get("GITHUB_TOKEN", "")
+          repo = "https://github.com/fff666888521/cs01.git"
+          branch = "main"
 
-# Save result for PR comment
-with open('quality_result.json', 'w') as f:
-                                                                                                                                               json.dump(result, f)
-  "
+          print("=" * 54)
+          print("  AI Code Quality Scan - Starting...")
+          print("=" * 54)
+
+          # Start scan via API
+          resp = requests.post(f"{api}/git-scan", json={"repo_url": repo, "branch": branch},
+              headers={"Content-Type": "application/json"}, timeout=30)
+          if not resp.ok:
+              print(f"[ERROR] Scan failed to start: {resp.text}")
+              exit(1)
+          scan = resp.json()
+          scan_id = scan["scan_id"]
+          print(f"[SCAN ID] {scan_id}")
+          print()
+
+          # Poll progress to show AI analysis in real time
+          done = False
+          while not done:
+              prog = requests.get(f"{api}/git-scan/{scan_id}/progress", timeout=10).json()
+              p = prog.get("progress", {})
+              stage = p.get("stage", "")
+              msg = p.get("message", "")
+              curr = p.get("current", 0)
+              total = p.get("total", 0)
+
+              if stage == "analyzing" and total > 0:
+                  bar = "\u2588" * int(curr / total * 20) + "\u2591" * (20 - int(curr / total * 20))
+                  sys.stdout.write(f"\r  [{bar}] {curr}/{total}  {msg}")
+                  sys.stdout.flush()
+              elif msg:
+                  print(f"[{stage}] {msg}")
+
+              if prog.get("result"):
+                  done = True
+                  result = prog["result"]
+              else:
+                  time.sleep(1)
+
+          print()
+          print()
+          print("=" * 54)
+          print("  AI Analysis Complete")
+          print("=" * 54)
+          print(f"  Score:    {result.get('overall_score', 'N/A')}/100")
+          print(f"  Issues:   {result.get('total_issues', 0)} (HIGH {result.get('high_issues', 0)})")
+          print(f"  Decision: {result.get('overall_decision', {}).get('label', 'N/A')}")
+          print()
+
+          # Per-file AI analysis summary
+          for f in result.get("files", []):
+              status = f.get("status", "unknown")
+              score = f.get("score", {}).get("total", "?")
+              issues_n = len(f.get("issues", []))
+              icon = "\u2713" if status == "pass" else "\u26a0" if status == "warn" else "\u2717" if status == "block" else "?"
+              print(f"  [{icon}] {f.get('file_path', '?')}  (score: {score}, issues: {issues_n})")
+
+          with open("quality_result.json", "w") as f:
+              json.dump(result, f)
+          PYEOF
 
       - name: Post PR Comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == "pull_request"
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const result = JSON.parse(fs.readFileSync('quality_result.json', 'utf8'));
+            const fs = require("fs");
+            const result = JSON.parse(fs.readFileSync("quality_result.json", "utf8"));
             const score = result.overall_score || 0;
             const issues = result.total_issues || 0;
             const high = result.high_issues || 0;
-            const decision = result.overall_decision?.label || '--';
-            const body = `## AI Code Quality Report\n\n| Metric | Value |\n|--------|-------|\n| Score | ${score}/100 |\n| Issues | ${issues} (HIGH ${high}) |\n| Decision | ${decision} |\n\n${result.summary || ''}`;
+            const decision = result.overall_decision?.label || "--";
+            const body = `## AI Code Quality Report\n\n| Metric | Value |\n|--------|-------|\n| Score | ${score}/100 |\n| Issues | ${issues} (HIGH ${high}) |\n| Decision | ${decision} |\n\n${result.summary || ""}`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -76,13 +120,13 @@ with open('quality_result.json', 'w') as f:
       - name: Check Quality Gate
         if: always()
         run: |
-          python -c "
-  import json
-with open('quality_result.json') as f:
-  r = json.load(f)
-  gate = r.get('overall_decision', {}).get('status', 'PASS')
-  score = r.get('overall_score', 100)
-print(f'Quality Gate: {gate}, Score: {score}/100')
-if gate == 'BLOCK':
-  exit(1)
-  "
+          python - <<'PYEOF'
+          import json
+          with open("quality_result.json") as f:
+              r = json.load(f)
+          gate = r.get("overall_decision", {}).get("status", "PASS")
+          score = r.get("overall_score", 100)
+          print(f"Quality Gate: {gate}, Score: {score}/100")
+          if gate == "BLOCK":
+              exit(1)
+          PYEOF
