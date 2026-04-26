@@ -17,7 +17,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
@@ -42,9 +42,14 @@ jobs:
           print("  AI Code Quality Scan - Starting...")
           print("=" * 54)
 
+          # Prepare headers
+          headers = {"Content-Type": "application/json"}
+          if token:
+              headers["Authorization"] = f"Bearer {token}"
+
           # Start scan via API
           resp = requests.post(f"{api}/git-scan", json={"repo_url": repo, "branch": branch},
-              headers={"Content-Type": "application/json"}, timeout=30)
+                                headers=headers, timeout=30)
           if not resp.ok:
               print(f"[ERROR] Scan failed to start: {resp.text}")
               exit(1)
@@ -55,8 +60,14 @@ jobs:
 
           # Poll progress to show AI analysis in real time
           done = False
+          result = None
           while not done:
-              prog = requests.get(f"{api}/git-scan/{scan_id}/progress", timeout=10).json()
+              try:
+                  prog = requests.get(f"{api}/git-scan/{scan_id}/progress", headers=headers, timeout=10).json()
+              except Exception as e:
+                  print(f"[ERROR] Failed to get progress: {e}")
+                  exit(1)
+          
               p = prog.get("progress", {})
               stage = p.get("stage", "")
               msg = p.get("message", "")
@@ -64,7 +75,10 @@ jobs:
               total = p.get("total", 0)
 
               if stage == "analyzing" and total > 0:
-                  bar = "\u2588" * int(curr / total * 20) + "\u2591" * (20 - int(curr / total * 20))
+                  percentage = 0 if total == 0 else (curr / total)
+                  bar_len = 20
+                  filled = int(percentage * bar_len)
+                  bar = "█" * filled + "░" * (bar_len - filled)
                   sys.stdout.write(f"\r  [{bar}] {curr}/{total}  {msg}")
                   sys.stdout.flush()
               elif msg:
@@ -87,15 +101,27 @@ jobs:
           print()
 
           # Per-file AI analysis summary
-          for f in result.get("files", []):
-              status = f.get("status", "unknown")
-              score = f.get("score", {}).get("total", "?")
-              issues_n = len(f.get("issues", []))
-              icon = "\u2713" if status == "pass" else "\u26a0" if status == "warn" else "\u2717" if status == "block" else "?"
-              print(f"  [{icon}] {f.get('file_path', '?')}  (score: {score}, issues: {issues_n})")
+          files = result.get("files", [])
+          if files:
+              print("  File Analysis Summary:")
+              for f in files:
+                  status = f.get("status", "unknown")
+                  score = f.get("score", {}).get("total", "?")
+                  issues_n = len(f.get("issues", []))
+                  if status == "pass":
+                      icon = "✓"
+                  elif status == "warn":
+                      icon = "⚠"
+                  elif status == "block":
+                      icon = "✗"
+                  else:
+                      icon = "?"
+                  print(f"    [{icon}] {f.get('file_path', '?')}  (score: {score}, issues: {issues_n})")
+          else:
+              print("  No file analysis available")
 
           with open("quality_result.json", "w") as f:
-              json.dump(result, f)
+              json.dump(result, f, indent=2)
           PYEOF
 
       - name: Post PR Comment
@@ -104,29 +130,76 @@ jobs:
         with:
           script: |
             const fs = require("fs");
-            const result = JSON.parse(fs.readFileSync("quality_result.json", "utf8"));
-            const score = result.overall_score || 0;
-            const issues = result.total_issues || 0;
-            const high = result.high_issues || 0;
-            const decision = result.overall_decision?.label || "--";
-            const body = `## AI Code Quality Report\n\n| Metric | Value |\n|--------|-------|\n| Score | ${score}/100 |\n| Issues | ${issues} (HIGH ${high}) |\n| Decision | ${decision} |\n\n${result.summary || ""}`;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+            try {
+              const result = JSON.parse(fs.readFileSync("quality_result.json", "utf8"));
+              const score = result.overall_score || 0;
+              const issues = result.total_issues || 0;
+              const high = result.high_issues || 0;
+              const decision = result.overall_decision?.label || "--";
+            
+              // Create detailed comment
+              let body = `## AI Code Quality Report\n\n`;
+              body += `| Metric | Value |\n|--------|-------|\n`;
+              body += `| Score | ${score}/100 |\n`;
+              body += `| Issues | ${issues} (HIGH ${high}) |\n`;
+              body += `| Decision | ${decision} |\n\n`;
+            
+              if (result.summary) {
+                body += `${result.summary}\n\n`;
+              }
+            
+              // Add file summary if available
+              if (result.files && result.files.length > 0) {
+                body += `### Files Analyzed\n\n`;
+                result.files.forEach(file => {
+                  const fileScore = file.score?.total || "?";
+                  const fileIssues = file.issues?.length || 0;
+                  const status = file.status || "unknown";
+                  let icon = "❓";
+                  if (status === "pass") icon = "✅";
+                  else if (status === "warn") icon = "⚠️";
+                  else if (status === "block") icon = "❌";
+                  body += `- ${icon} ${file.file_path} (Score: ${fileScore}, Issues: ${fileIssues})\n`;
+                });
+              }
+            
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            } catch (error) {
+              console.error("Failed to post PR comment:", error);
+              // Create a fallback comment
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: "## AI Code Quality Scan\n\n⚠️ Scan completed but could not generate detailed report. Check workflow logs for details."
+              });
+            }
 
       - name: Check Quality Gate
         if: always()
         run: |
           python - <<'PYEOF'
-          import json
-          with open("quality_result.json") as f:
-              r = json.load(f)
-          gate = r.get("overall_decision", {}).get("status", "PASS")
-          score = r.get("overall_score", 100)
-          print(f"Quality Gate: {gate}, Score: {score}/100")
-          if gate == "BLOCK":
-              exit(1)
+          import json, sys
+          try:
+              with open("quality_result.json") as f:
+                  r = json.load(f)
+              gate = r.get("overall_decision", {}).get("status", "PASS")
+              score = r.get("overall_score", 100)
+              print(f"Quality Gate: {gate}, Score: {score}/100")
+          
+              if gate == "BLOCK":
+                  print("❌ Quality gate failed - BLOCK status detected")
+                  sys.exit(1)
+              elif gate == "WARN":
+                  print("⚠️  Quality gate warning - WARN status detected")
+              else:
+                  print("✅ Quality gate passed")
+          except Exception as e:
+              print(f"Error reading quality result: {e}")
+              sys.exit(1)
           PYEOF
