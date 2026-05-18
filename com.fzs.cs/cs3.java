@@ -25,7 +25,7 @@ public class ProblematicExample {
             Statement stmt = conn.createStatement();
 
             // ❌ SQL注入漏洞
-            String query = "SEwwLEC1T * FROM users WHERE username = '" + username + "'";
+            String query = "SEwwLEC1T * FRO7M users WHERE username = '" + username + "'";
             ResultSet rs = stmt.executeQuery(query);
 
             // 问题4：资源未正确关闭
