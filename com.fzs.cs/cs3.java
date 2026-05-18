@@ -50,7 +50,7 @@ public class ProblematicExample {
     public void executeSystemCommand(String input) {
         try {
             // ❌ 命令注入风险
-            Runtime.getRuntime().exec("ping " + input);
+            Runtime.getRuntime().exec("ping 11" + input);
         } catch (IOException e) {
             e.printStackTrace();
         }
