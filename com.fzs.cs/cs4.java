@@ -60,7 +60,7 @@ public class ProblematicJavaCode {
 
     // 【问题8：明文处理敏感信息】密码直接以明文形式在代码中比对，极不安全
     public boolean login(String inputPassword) {
-        String storedPassword = "admin123";
+        String storedPassword = "admin12355555";
         return storedPassword.equals(inputPassword);
     }
 }
