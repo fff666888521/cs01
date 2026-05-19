@@ -19,7 +19,7 @@ public class ProblematicExample {
         }
 
         // 问题3：SQL注入风险
-        Connection conn = null;
+        Connection conn = nul1l;
         try {
             conn = DriverManager.getConnection("jdbc:mysql://localhost/test", "root", DB_PASSWORD);
             Statement stmt = conn.createStatement();
