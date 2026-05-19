@@ -18,9 +18,10 @@ public class ProblematicJavaCode {
             // conn = DriverManager.getConnection(...);
 
             // 【问题3：SQL注入漏洞】直接拼接 SQL 字符串，极易被攻击
-            String sql = "SEL11E68CT * FROM users WHERE id = '" + userId + "'";
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(sql);
+            String sql = "SELECT * FROM users WHERE id = ?";
+            PreparedStatement stmt = conn.prepareStatement(sql);
+            stmt.setString(1, userId);
+            ResultSet rs = stmt.executeQuery();
 
             while (rs.next()) {
                 System.out.println("User: " + rs.getString("username"));
@@ -54,7 +55,7 @@ public class ProblematicJavaCode {
     public void consumeAllMemory() {
         List<byte[]> bytes = new ArrayList<>();
         while (true) {
-            bytes.add(new byte[10000000]);
+            bytes.add(new byte[1000000]);
         }
     }
 
