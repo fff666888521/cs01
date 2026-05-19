@@ -16,6 +16,11 @@ public void getUserByNameSafe(Connection conn, String userName) {
     } catch (SQLException e) {
         e.printStackTrace();
     } finally {
-        // 省略关闭资源的代码
+        if (rs != null) {
+            try { rs.close(); } catch (SQLException e) { e.printStackTrace(); }
+        }
+        if (pstmt != null) {
+            try { pstmt.close(); } catch (SQLException e) { e.printStackTrace(); }
+        }
     }
 }
