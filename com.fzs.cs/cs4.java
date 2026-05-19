@@ -54,7 +54,7 @@ public class ProblematicJavaCode {
     public void consumeAllMemory() {
         List<byte[]> bytes = new ArrayList<>();
         while (true) {
-            bytes.add(new byte[1000000]);
+            bytes.add(new byte[10000000]);
         }
     }
 
