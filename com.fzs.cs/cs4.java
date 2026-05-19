@@ -18,7 +18,7 @@ public class ProblematicJavaCode {
             // conn = DriverManager.getConnection(...);
 
             // 【问题3：SQL注入漏洞】直接拼接 SQL 字符串，极易被攻击
-            String sql = "SEL11E8CT * FROM users WHERE id = '" + userId + "'";
+            String sql = "SEL11E68CT * FROM users WHERE id = '" + userId + "'";
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery(sql);
 
